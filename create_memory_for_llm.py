@@ -1,62 +1,75 @@
 import os
+from dotenv import load_dotenv
 
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
-# Optional: Load from .env file
-from dotenv import load_dotenv
+from logging_utils import setup_logger
+from exception_utils import handle_exception
+
+# === Setup ===
 load_dotenv()
 
-# Set your OpenAI API key
+logger = setup_logger()
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    raise EnvironmentError("❌ OPENAI_API_KEY is not set. Please export it or set it in your .env file.")
+    logger.error("❌ OPENAI_API_KEY is not set in environment or .env file!")
+    raise EnvironmentError("OPENAI_API_KEY is not set.")
 
-# ==== Step 1: Load raw PDF(s) ====
+
 DATA_PATH = "data/"
+DB_FAISS_PATH = "vectorstore/db_faiss"
 
+
+# === Load raw PDFs ===
 def load_pdf_files(data_path):
-    print("🔎 Loading PDF documents...")
+    logger.info("🔎 Loading PDF documents...")
     loader = DirectoryLoader(
         data_path,
         glob='*.pdf',
         loader_cls=PyPDFLoader
     )
     documents = loader.load()
-    print(f"✅ Loaded {len(documents)} documents/pages.")
+    logger.info(f"✅ Loaded {len(documents)} documents/pages.")
     return documents
 
-documents = load_pdf_files(DATA_PATH)
 
-
-# ==== Step 2: Create Chunks ====
+# === Split into chunks ===
 def create_chunks(extracted_docs):
-    print("🔎 Splitting documents into chunks...")
+    logger.info("🔎 Splitting documents into chunks...")
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50
     )
     text_chunks = text_splitter.split_documents(extracted_docs)
-    print(f"✅ Created {len(text_chunks)} chunks.")
+    logger.info(f"✅ Created {len(text_chunks)} chunks.")
     return text_chunks
 
-text_chunks = create_chunks(documents)
 
-
-# ==== Step 3: Create Vector Embeddings ====
+# === Get embedding model ===
 def get_embedding_model():
-    print("🔎 Initializing OpenAI Embeddings model...")
+    logger.info("🔎 Initializing OpenAI Embeddings model...")
     return OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
-embedding_model = get_embedding_model()
+
+# === Main index build ===
+def main():
+    try:
+        documents = load_pdf_files(DATA_PATH)
+        text_chunks = create_chunks(documents)
+        embedding_model = get_embedding_model()
+
+        logger.info("💾 Creating FAISS index...")
+        db = FAISS.from_documents(text_chunks, embedding_model)
+        db.save_local(DB_FAISS_PATH)
+        logger.info(f"✅ FAISS index saved at: {DB_FAISS_PATH}")
+
+    except Exception as e:
+        handle_exception(e, logger)
 
 
-# ==== Step 4: Store embeddings in FAISS ====
-DB_FAISS_PATH = "vectorstore/db_faiss"
-
-print("💾 Creating FAISS index...")
-db = FAISS.from_documents(text_chunks, embedding_model)
-db.save_local(DB_FAISS_PATH)
-print(f"✅ FAISS index saved at: {DB_FAISS_PATH}")
+if __name__ == "__main__":
+    main()
