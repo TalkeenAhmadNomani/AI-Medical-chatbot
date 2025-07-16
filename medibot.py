@@ -51,7 +51,7 @@ def set_custom_prompt():
 
 # === Streamlit App ===
 def main():
-    st.title("Ask Chatbot! (OpenAI GPT-4o-mini)")
+    st.title("Ask CareConsult AI!")
 
     if 'messages' not in st.session_state:
         st.session_state.messages = []
